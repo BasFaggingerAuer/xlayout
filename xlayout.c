@@ -32,7 +32,7 @@ SOFTWARE.
 
 //Compilation: gcc -O2 -Wall -Werror -Wextra -std=c99 -pedantic xlayout.c -o xlayout -lX11
 
-Window get_window_under_cursor(Display *display) {
+Window get_window_under_cursor(Display *display, int screen) {
     XEvent event;
     
     //Initialize event.
@@ -42,7 +42,7 @@ Window get_window_under_cursor(Display *display) {
     
     //Get current pointer location and window w.r.t. X root.
     XQueryPointer(display,
-                  RootWindow(display, DefaultScreen(display)),
+                  RootWindow(display, screen),
                   &event.xbutton.root,
                   &event.xbutton.window,
                   &event.xbutton.x_root,
@@ -130,6 +130,7 @@ void print_window_name(FILE *out, Display *display, Window window) {
 int main(int argc, char **argv) {
     int nr_columns;
     Display *display;
+    int screen;
     Window root;
     unsigned int modifiers = ControlMask;
     int width, height;
@@ -138,8 +139,8 @@ int main(int argc, char **argv) {
     //Pass command line arguments.
     fprintf(stderr, "Initializing...\n");
     
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s nr_columns\n\n(Will give you the ability to assign a window to column N by pressing Control + FN.)\n", argv[0]);
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "Usage: %s nr_columns [modifier]\n\n(Will give you the ability to assign a window to column N by pressing Control + FN or Modifier + FN for a different modifier obtained from xbindkeys --key.)\n", argv[0]);
         return -1;
     }
     
@@ -148,6 +149,10 @@ int main(int argc, char **argv) {
     if (nr_columns < 1 || nr_columns > 12) {
         fprintf(stderr, "Please specify 1 up to 12 columns!\n");
         return -1;
+    }
+    
+    if (argc > 2) {
+        modifiers = atoi(argv[2]);
     }
     
     //Connect to X.
@@ -159,14 +164,17 @@ int main(int argc, char **argv) {
     }
     
     //Get screen size.
-    width = XWidthOfScreen(ScreenOfDisplay(display, DefaultScreen(display)));
-    height = XHeightOfScreen(ScreenOfDisplay(display, DefaultScreen(display)));
+    screen = DefaultScreen(display);
+    width = XWidthOfScreen(ScreenOfDisplay(display, screen));
+    height = XHeightOfScreen(ScreenOfDisplay(display, screen));
     
     //Setup key grabbing (Control + function keys).
     root = DefaultRootWindow(display);
     
     for (i = 0; i < nr_columns; ++i) {
         XGrabKey(display, XKeysymToKeycode(display, XK_F1 + i), modifiers, root, True, GrabModeAsync, GrabModeAsync);
+        //Make this robust for numlock being enabled.
+        XGrabKey(display, XKeysymToKeycode(display, XK_F1 + i), modifiers | Mod2Mask, root, True, GrabModeAsync, GrabModeAsync);
     }
     
     XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
@@ -192,7 +200,7 @@ int main(int argc, char **argv) {
                 i = keysym - XK_F1;
                 
                 //Get currently active window.
-                //focus_window = get_window_under_cursor(display);
+                //focus_window = get_window_under_cursor(display, screen);
                 focus_window = get_top_focus_window(display);
                 XGetWindowAttributes(display, focus_window, &attributes);
                 
