@@ -128,10 +128,14 @@ void print_window_name(FILE *out, Display *display, Window window) {
 //From https://stackoverflow.com/questions/4530786/xlib-create-window-in-mimized-or-maximized-state.
 //From https://specifications.freedesktop.org/wm-spec/1.3/ar01s05.html.
 int main(int argc, char **argv) {
+    int column_widths[12];
+    int column_offsets[12];
+    int weight_sum;
     int nr_columns;
     Display *display;
     int screen;
     Window root;
+    //Change this to a different mask to use a different key for moving windows, use xbindkeys --key to obtain the desired integer values.
     unsigned int modifiers = ControlMask;
     int width, height;
     int i;
@@ -139,20 +143,26 @@ int main(int argc, char **argv) {
     //Pass command line arguments.
     fprintf(stderr, "Initializing...\n");
     
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s nr_columns [modifier]\n\n(Will give you the ability to assign a window to column N by pressing Control + FN or Modifier + FN for a different modifier obtained from xbindkeys --key.)\n", argv[0]);
+    if (argc < 2 || argc > 13) {
+        fprintf(stderr, "Usage: %s wgt_column1 ... wgt_columnK\n\n(Will give you the ability to assign a window to column N by pressing Control + FN for 1 <= N <= K. The variable wgt_columnN specifies the relative width of column N with respect to the other columns.)\n", argv[0]);
         return -1;
     }
     
-    nr_columns = atoi(argv[1]);
-    
-    if (nr_columns < 1 || nr_columns > 12) {
-        fprintf(stderr, "Please specify 1 up to 12 columns!\n");
-        return -1;
-    }
-    
-    if (argc > 2) {
-        modifiers = atoi(argv[2]);
+    //Setup columns.
+    nr_columns = argc - 1;
+    weight_sum = 0;
+
+    for (i = 0; i < nr_columns; ++i) {
+        int w = atoi(argv[i + 1]);
+        
+        if (w <= 0) {
+            fprintf(stderr, "Only positive column weights are permitted.\n");
+            return -1;
+        }
+        
+        column_widths[i] = w;
+        column_offsets[i] = weight_sum;
+        weight_sum += w;
     }
     
     //Connect to X.
@@ -167,6 +177,12 @@ int main(int argc, char **argv) {
     screen = DefaultScreen(display);
     width = XWidthOfScreen(ScreenOfDisplay(display, screen));
     height = XHeightOfScreen(ScreenOfDisplay(display, screen));
+
+    //Scale columns to the width of the screen.
+    for (i = 0; i< nr_columns; ++i) {
+        column_widths[i] = (width*column_widths[i])/weight_sum;
+        column_offsets[i] = (width*column_offsets[i])/weight_sum;
+    }
     
     //Setup key grabbing (Control + function keys).
     root = DefaultRootWindow(display);
@@ -205,7 +221,7 @@ int main(int argc, char **argv) {
                 XGetWindowAttributes(display, focus_window, &attributes);
                 
                 //Put window into its column.
-                XMoveResizeWindow(display, focus_window, width*i/nr_columns, 0, width/nr_columns, attributes.height);
+                XMoveResizeWindow(display, focus_window, column_offsets[i], 0, column_widths[i], attributes.height);
                 break;
             case KeyRelease:
                 break;
